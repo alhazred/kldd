@@ -36,13 +36,14 @@ static const char *search_dirs[] = {
 #define	N_SEARCH_DIRS	(sizeof (search_dirs) / sizeof (search_dirs[0]))
 
 char *prog_name;
-static int files = 0;
+static int kflag = 0; /* skip kernel dependency */
 
 static void
 usage()
 {
 	(void) fprintf(stderr, gettext(
-"Usage: %s file ...\n"), prog_name);
+	    "Usage: %s [-K] file ...\n"), prog_name);
+	exit(1);
 }
 
 static void
@@ -114,17 +115,20 @@ kldd_dynamic(Elf *elf_file, SCNTAB *p_scns, int num_scns, char *filename)
 		}
 	}
 
-	(void) sprintf(unixpath, "%s/%s", search_dirs[0],
-	    p_ehdr.e_ident[EI_CLASS] ==  ELFCLASS64 ? "amd64/unix" : "unix");
-	if (access(unixpath, F_OK) == 0)
-		(void) printf("\tunix (parent) =>\t%s\n", unixpath);
+	if (!kflag) {
+		(void) sprintf(unixpath, "%s/%s", search_dirs[0],
+		    p_ehdr.e_ident[EI_CLASS] ==  ELFCLASS64 ?
+		    "amd64/unix" : "unix");
+		if (access(unixpath, F_OK) == 0)
+			(void) printf("\tunix (parent) =>\t%s\n", unixpath);
 
-	(void) sprintf(unixpath, "%s/%s", search_dirs[1],
-	    p_ehdr.e_ident[EI_CLASS] ==  ELFCLASS64 ? "amd64/genunix"
-	    : "genunix");
-	if (access(unixpath, F_OK) == 0)
-		(void) printf("\tgenunix (parent dependency) =>\t%s\n",
-		    unixpath);
+		(void) sprintf(unixpath, "%s/%s", search_dirs[1],
+		    p_ehdr.e_ident[EI_CLASS] ==  ELFCLASS64 ? "amd64/genunix"
+		    : "genunix");
+		if (access(unixpath, F_OK) == 0)
+			(void) printf("\tgenunix (parent dependency) =>\t%s\n",
+			    unixpath);
+	}
 }
 
 static void
@@ -199,13 +203,12 @@ check_elf(char *filename)
 	}
 
 	file_type = elf_kind(elf_file);
-		if (file_type == ELF_K_ELF) {
-			if (files)
-				(void) printf("%s:\n", filename);
+	if (file_type == ELF_K_ELF) {
+		(void) printf("%s:\n", filename);
 		kldd_section_table(elf_file, filename);
 	} else {
 		(void) fprintf(stderr, "%s: %s: invalid file type\n",
-			    prog_name, filename);
+		    prog_name, filename);
 	}
 	(void) elf_end(elf_file);
 	(void) close(fd);
@@ -215,6 +218,8 @@ int
 main(int argc, char *argv[])
 {
 	prog_name = argv[0];
+	int c;
+
 	(void) setlocale(LC_ALL, "");
 
 	if (elf_version(EV_CURRENT) == EV_NONE) {
@@ -223,11 +228,19 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 
-	if (argc < 2) {
+	while ((c = getopt(argc, argv, ":K")) != EOF) {
+		switch ((char)c) {
+		case 'K':
+			kflag++;
+			break;
+		case '?': /* fallthrough */
+		default:
+			usage();
+		}
+	}
+
+	if (optind >= argc) {
 		usage();
-		exit(1);
-	} else if (argc > 2) {
-		files++;
 	}
 
 	while (optind < argc) {
